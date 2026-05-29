@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\OtpCode;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
@@ -62,19 +63,30 @@ class AuthController extends Controller
         try {
             $validated = $request->validate([
                 'name'     => 'required|string|max:255',
-                'email'    => 'required|email|unique:users,email',
+                'email'    => 'required|email',
                 'password' => ['required', 'confirmed', Password::min(6)],
             ]);
 
-            User::create([
-                'name'     => $validated['name'],
-                'email'    => $validated['email'],
-                'password' => Hash::make($validated['password']),
-                'role'     => 'user',
-            ]);
+            // Hapus akun lama yang belum diverifikasi agar bisa daftar ulang
+            User::where('email', $validated['email'])
+                ->whereNull('email_verified_at')
+                ->delete();
 
-            $code = $this->generateOtp($validated['email'], 'email_verification');
-            $this->sendOtpEmail($validated['email'], $code, 'email_verification');
+            if (User::where('email', $validated['email'])->exists()) {
+                return response()->json(['success' => false, 'message' => 'Validasi gagal.', 'errors' => ['email' => ['Email sudah digunakan.']]], 422);
+            }
+
+            DB::transaction(function () use ($validated) {
+                $user = User::create([
+                    'name'     => $validated['name'],
+                    'email'    => $validated['email'],
+                    'password' => Hash::make($validated['password']),
+                    'role'     => 'user',
+                ]);
+
+                $code = $this->generateOtp($user->email, 'email_verification');
+                $this->sendOtpEmail($user->email, $code, 'email_verification');
+            });
 
             return response()->json([
                 'success' => true,
