@@ -8,7 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
@@ -53,9 +53,15 @@ class AuthController extends Controller
         </body>
         </html>";
 
-        Mail::html($html, function ($msg) use ($email, $subject) {
-            $msg->to($email)->subject($subject);
-        });
+        Http::withHeaders([
+            'api-key'      => env('BREVO_API_KEY'),
+            'Content-Type' => 'application/json',
+        ])->post('https://api.brevo.com/v3/smtp/email', [
+            'sender'      => ['name' => config('app.name'), 'email' => config('mail.from.address')],
+            'to'          => [['email' => $email]],
+            'subject'     => $subject,
+            'htmlContent' => $html,
+        ]);
     }
 
     public function register(Request $request)
